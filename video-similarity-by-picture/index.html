@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet"
+        integrity="sha384-T3c6CoIi6uLrA9TneNEoa7RxnatzjcDSCmG1MXxSR1GAsXEV/Dwwykc2MPK8M2HN" crossorigin="anonymous">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+
+    <link rel="stylesheet" href="css/style.css">
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"
+        integrity="sha384-C6RzsynM9kWDrMNeT87bh95OGNyZPhcTNXj1NW7RuBCsyN/o0jlpcV8Qyq46cDfL"
+        crossorigin="anonymous"></script>
+    
+    <!-- <script type="text/javascript" src="https://code.jquery.com/jquery-2.1.1.min.js"></script> -->
+    <!-- <script src="https://cdnjs.cloudflare.com/ajax/libs/materialize/0.100.2/js/materialize.min.js"></script> -->
+
+    <script src="js/vendor/face-api.js"></script>
+    <script src="js/commons.js"></script>
+    <script src="js/faceDetectionControls.js"></script>
+    <script src="js/imageSelectionControls.js"></script>
+    <script src="js/face.js"></script>
+
+</head>
+
+<body>
+    <div class="container">
+        <div class="row">
+            <div class="col-8">
+                <div class="card">
+                    <div class="card-body">
+
+                        <div data-slide="slide" class="slide">
+                            <div class="slide-items" id="video-overlay">
+                                <video id="customer-video" style="width:100%"
+                                src="samples/sample.3gp"></video>
+                                <canvas id="customer-video-overlay"></canvas>                              
+                            </div>
+                            <div class="slide-nav">
+                                <div class="slide-thumb">
+                                    <span id="timeline" class=""></span>
+                                </div>
+
+                                <div class="slide-thumb">
+                                    <div class="control">
+                                        <i id="video-control-state" class="bi bi-play-fill"></i>
+                                    </div>
+                                </div>
+                            </div>
+                          </div>  
+                    </div>
+                </div>
+            </div>
+            <div class="col-4">
+                <div class="card">
+                    <div class="card-body" >
+                        <div id="customer-photo-overlay" style="position: relative;">
+                            <img id="customer-photo" class="img-fluid" src="samples/test2.jpg" alt="">
+                            <canvas id="customer-photo-overlay-canvas" style="position: absolute; top: 0; left: 0;"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-12 mt-3">
+                <div class="card">
+                    <div class="card-body">
+                        <div style="overflow-y: auto;" class="d-flex justify-content-between align-items-center">
+                            <div id="frames" class="d-flex"></div>
+                            <div id="avarage-result" class="d-flex justify-content-center align-items-center"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="browse-result" class="modal" tabindex="-1">
+        <div class="modal-dialog modal-xl modal-dialog-centered">
+          <div class="modal-content">
+            <div class="modal-body" id="result-image">
+                
+            </div>
+          </div>
+        </div>
+    </div>
+
+    <script>
+        const state = {
+            originalPicture: null,
+            currentPicture: null,
+            videoPictures: [],
+            frameRate: 2,
+            similarityDistance: [],
+            videoControl: null,
+            timeline: null,
+            frames: null,
+            oldTime: 0,
+            current: null,
+            states: ['pause', 'play'],
+            el: {
+                canvas: null,
+                video: null,
+            },
+
+            listen(event, callback) {
+                this.video.addEventListener(event, callback)
+                return this
+            },
+
+            get video() {
+                return this.el.video
+            },
+
+            set control(state) {
+                const control = Number(state == 'play' && this.video.paused)
+                this.videoControl.classList.add(`bi-${this.states[control ^ 1]}-fill`)
+                this.videoControl.classList.remove(`bi-${this.states[control]}-fill`)
+                this.timeline.style.animationPlayState = `${control ? 'running' : 'paused'}`
+                this.video[this.states[control]]()
+           
+            },
+
+            set video(el) {
+                this.el.video = el
+            },
+
+
+            get canvas() {
+                return this.el.canvas
+            },
+
+            get ctx() {
+                return this.canvas.getContext('2d')
+            },
+
+            set canvas(el) {
+                this.el.canvas = el
+            },
+
+            get currentTime() {
+                return Math.floor(this.video.currentTime)
+            },
+
+            color(value) {
+                return value < 0.7 ? 'text-success' : 'text-danger'
+            },
+
+            init(video) {
+                this.frames = document.getElementById("frames")
+                this.videoControl = document.getElementById("video-control-state")
+                this.timeline = document.getElementById("timeline")
+    
+                
+                this.timeline.style.animationPlayState = 'paused'
+                this.timeline.classList.add('active')
+                this.videoControl.addEventListener('click', () => {
+                    this.control = 'play'
+                })
+                this.video = video
+                const customerPhoto = document.getElementById("customer-photo")
+                
+                this.canvas = document.createElement('canvas')
+                this.ctx.canvas.width = this.video.clientWidth;
+                this.ctx.canvas.height = this.video.clientHeight;
+
+                this.listen('canplaythrough', () => this.timeline.style.animationDuration = `${video.duration}s`)
+                    .listen("play", () => {
+                        
+                        setInterval(async () => {
+                            this.frameBy(this.frameRate, async () => {
+                                const id = this.oldTime / this.frameRate;
+    
+                                if(!document.getElementById(`frame-${id}`)) {
+                                    this.ctx.drawImage(this.video, 0, 0, this.ctx.canvas.width, this.ctx.canvas.height)
+                                    const image = new Image()
+                                    const result = document.createElement("div")
+                                    result.classList.add("d-flex", "flex-column", "justify-content-center", "align-items-center")
+                                    
+                                    image.src = this.canvas.toDataURL()
+                                    image.classList.add("img-thumbnail", "mx-2")
+                                    image.style.width = '100px'
+                                    image.id = `frame-${id}`
+                                    
+                                    result.append(image)
+                                    this.frames.append(result);
+
+                                    document.getElementById(`frame-${id}`).addEventListener('click', () => {
+                                        this.current = id
+                                        const modal = document.getElementById("browse-result")
+                                        const bsModal = new bootstrap.Modal(modal)
+
+                                        const template = `
+                                            <div class='row'>
+                                                <div class="col-12 d-flex justify-content-end">
+                                                    <button type='button' class="btn-close mb-2" data-bs-dismiss="modal">
+                                                </div>
+                                                <div class="col-8">
+                                                    <div class="row">
+                                                        <div class="col">
+                                                            <i class="bi bi-arrow"></i>
+                                                        </div>
+                                                        <div class="col-10">
+                                                            <img src=${document.getElementById(`frame-${this.current}`).src} class='img-thumbnail'>    
+                                                        </div>
+                                                        <div class="col">
+                                                            
+                                                        </div>
+                                                    </div>
+
+                                                    
+                                                </div>
+
+                                                <div class="col-4">
+                                                    <img src=${document.getElementById("customer-photo").getAttribute("src")} class='img-thumbnail'>
+                                                </div>
+                                            </div>
+                                        `
+                                        document.getElementById("result-image").innerHTML = template
+
+                                        bsModal.show()
+                                    })
+                                }
+                            })
+                        })
+                    })
+                    .listen('ended', () => {
+                        this.video.currentTime = 0;
+                        this.control = 'pause'
+                    })
+            },
+
+
+            frameBy(x, callback) {
+                if (
+                    this.currentTime % x == 0 &&
+                    this.currentTime != this.oldTime
+                ) {
+                    callback();
+                    this.oldTime = this.currentTime
+                    return;
+                }
+                return;
+            }
+        }
+
+        document.addEventListener("DOMContentLoaded", () => {
+            state.init(document.getElementById("customer-video"))
+        })
+
+    </script>
+</body>
+
+</html>
