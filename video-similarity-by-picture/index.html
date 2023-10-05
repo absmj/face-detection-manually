@@ -36,7 +36,7 @@
                         <div data-slide="slide" class="slide">
                             <div class="slide-items" id="video-overlay">
                                 <video id="customer-video" style="width:100%"
-                                src="samples/sample.3gp"></video>
+                                src="samples/sample2.mp4"></video>
                                 <canvas id="customer-video-overlay"></canvas>                              
                             </div>
                             <div class="slide-nav">
@@ -58,7 +58,7 @@
                 <div class="card">
                     <div class="card-body" >
                         <div id="customer-photo-overlay" style="position: relative;">
-                            <img id="customer-photo" class="img-fluid" src="samples/test2.jpg" alt="">
+                            <img id="customer-photo" class="img-fluid" src="samples/sample3.jpg" alt="">
                             <canvas id="customer-photo-overlay-canvas" style="position: absolute; top: 0; left: 0;"></canvas>
                         </div>
                     </div>
@@ -68,7 +68,7 @@
             <div class="col-12 mt-3">
                 <div class="card">
                     <div class="card-body">
-                        <div style="overflow-y: auto;" class="d-flex justify-content-between align-items-center">
+                        <div style="max-width: 100%; overflow-y: auto;" class="d-flex justify-content-between align-items-center">
                             <div id="frames" class="d-flex"></div>
                             <div id="avarage-result" class="d-flex justify-content-center align-items-center"></div>
                         </div>
@@ -146,10 +146,12 @@
             },
 
             color(value) {
-                return value < 0.7 ? 'text-success' : 'text-danger'
+                return value < 0.6 ? 'text-success' : 'text-danger'
             },
 
-            init(video) {
+            async init(video) {
+                const customerPhoto = document.getElementById("customer-photo")
+                await faceDetection.mount(customerPhoto)
                 this.frames = document.getElementById("frames")
                 this.videoControl = document.getElementById("video-control-state")
                 this.timeline = document.getElementById("timeline")
@@ -161,15 +163,14 @@
                     this.control = 'play'
                 })
                 this.video = video
-                const customerPhoto = document.getElementById("customer-photo")
                 
                 this.canvas = document.createElement('canvas')
-                this.ctx.canvas.width = this.video.clientWidth;
-                this.ctx.canvas.height = this.video.clientHeight;
 
-                this.listen('canplaythrough', () => this.timeline.style.animationDuration = `${video.duration}s`)
-                    .listen("play", () => {
-                        
+
+                video.addEventListener("play", () => {
+                        this.timeline.style.animationDuration = `${video.duration}s`
+                        this.ctx.canvas.width = this.video.clientWidth;
+                        this.ctx.canvas.height = this.video.clientHeight;
                         setInterval(async () => {
                             this.frameBy(this.frameRate, async () => {
                                 const id = this.oldTime / this.frameRate;
@@ -184,8 +185,17 @@
                                     image.classList.add("img-thumbnail", "mx-2")
                                     image.style.width = '100px'
                                     image.id = `frame-${id}`
+                                    await faceDetection.compare(image)
+
+                                    if(!faceDetection.comparedFace) return;
                                     
+                                    const similarity = document.createElement("h5")
+                                    
+                                    similarity.textContent = faceDetection.similarity
+                                    faceDetection.biometrics = similarity.textContent 
+                                    similarity.classList.add(this.color(similarity.textContent))
                                     result.append(image)
+                                    result.append(similarity)
                                     this.frames.append(result);
 
                                     document.getElementById(`frame-${id}`).addEventListener('click', () => {
@@ -227,9 +237,13 @@
                             })
                         })
                     })
-                    .listen('ended', () => {
+                video.addEventListener('ended', () => {
                         this.video.currentTime = 0;
                         this.control = 'pause'
+                        const avgResult = document.getElementById("avarage-result")
+                        avgResult.textContent = faceDetection.avarageResult;
+                        avgResult.classList.add(this.color(avgResult.textContent))
+
                     })
             },
 
